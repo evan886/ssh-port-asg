@@ -1,0 +1,27 @@
+# Local .terraform directories
+**/.terraform/*
+
+# Terraform lock info (runtime)
+.terraform.tfstate.lock.info
+
+# State files (含敏感信息)
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Variable files (含敏感值时)
+*.tfvars
+*.tfvars.json
+
+# 可选：override 文件
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI 配置（含 token 时）
+.terraformrc
+terraform.rc
