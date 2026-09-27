@@ -19,3 +19,21 @@ variable "public_key_path" {
   description = "Path to SSH public key"
   type        = string
 }
+
+variable "sftp_username" {
+  description = "SFTP username"
+  type        = string
+  default     = "sftpuser"
+}
+
+variable "sftp_domain" {
+  description = "SFTP DNS name"
+  type        = string
+  default     = "sftp.linuxsa.org"
+}
+
+variable "route53_zone_name" {
+  description = "Route53 hosted zone name"
+  type        = string
+  default     = "sftp.linuxsa.org"
+}

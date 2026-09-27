@@ -93,6 +93,14 @@ resource "aws_security_group" "ssh" {
     cidr_blocks = [var.my_ip]
   }
 
+  ingress {
+    description = "NLB health check"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["10.10.0.0/16"]
+  }
+
   egress {
     description = "Allow all outbound traffic"
     from_port   = 0
@@ -105,6 +113,51 @@ resource "aws_security_group" "ssh" {
     Name = "ssh-port-lab-sg"
   }
 }
+
+resource "aws_lb" "sftp" {
+  name               = "sftp-port-lab-nlb"
+  internal           = false
+  load_balancer_type = "network"
+
+  subnets = [
+    aws_subnet.public.id
+  ]
+
+  tags = {
+    Name = "sftp-port-lab-nlb"
+  }
+}
+
+resource "aws_lb_target_group" "sftp" {
+  name        = "sftp-port-lab-tg"
+  port        = 22
+  protocol    = "TCP"
+  target_type = "instance"
+  vpc_id      = aws_vpc.lab.id
+
+  health_check {
+    protocol = "TCP"
+    port     = "traffic-port"
+  }
+
+  tags = {
+    Name = "sftp-port-lab-tg"
+  }
+}
+
+resource "aws_lb_listener" "sftp" {
+  load_balancer_arn = aws_lb.sftp.arn
+
+  port     = 22
+  protocol = "TCP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.sftp.arn
+  }
+}
+
+
 
 # --------------------------------------------------
 # EC2 Key Pair
@@ -140,6 +193,63 @@ resource "aws_launch_template" "lab" {
     aws_security_group.ssh.id
   ]
 
+#!/bin/bash
+
+echo "===== SFTP USERDATA START =====" > /tmp/sftp-userdata.log
+
+# Create SFTP user
+useradd -m -s /sbin/nologin ${var.sftp_username}
+
+# Create SSH directory
+mkdir -p /home/${var.sftp_username}/.ssh
+
+# Add SSH public key
+cat > /home/${var.sftp_username}/.ssh/authorized_keys <<'KEY'
+${file(var.public_key_path)}
+KEY
+
+# Set permissions
+chown -R ${var.sftp_username}:${var.sftp_username} \
+  /home/${var.sftp_username}/.ssh
+
+chmod 700 /home/${var.sftp_username}/.ssh
+chmod 600 /home/${var.sftp_username}/.ssh/authorized_keys
+
+# Create upload directory
+mkdir -p /home/${var.sftp_username}/upload
+
+chown ${var.sftp_username}:${var.sftp_username} \
+  /home/${var.sftp_username}/upload
+
+# SFTP-only SSH configuration
+cat > /etc/ssh/sshd_config.d/60-sftp-user.conf <<'EOT'
+Match User ${var.sftp_username}
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    PubkeyAuthentication yes
+    ForceCommand internal-sftp
+    PermitTTY no
+    AllowTcpForwarding no
+    X11Forwarding no
+EOT
+
+# Validate SSH configuration
+sshd -t
+
+if [ \$? -ne 0 ]; then
+  echo "ERROR: sshd configuration failed" >> /tmp/sftp-userdata.log
+  exit 1
+fi
+
+# Restart SSH
+systemctl restart sshd
+
+echo "===== SFTP USERDATA SUCCESS =====" >> /tmp/sftp-userdata.log
+
+EOF
+  )
+
+
   tag_specifications {
     resource_type = "instance"
 
@@ -147,6 +257,7 @@ resource "aws_launch_template" "lab" {
       Name = "ssh-port-lab-ec2"
     }
   }
+
 }
 
 # --------------------------------------------------
@@ -164,6 +275,10 @@ resource "aws_autoscaling_group" "lab" {
     aws_subnet.public.id
   ]
 
+  target_group_arns = [
+    aws_lb_target_group.sftp.arn
+  ]
+
   launch_template {
     id      = aws_launch_template.lab.id
     version = "$Latest"
@@ -177,3 +292,21 @@ resource "aws_autoscaling_group" "lab" {
     propagate_at_launch = true
   }
 }
+
+data "aws_route53_zone" "sftp" {
+  name         = var.route53_zone_name
+  private_zone = false
+}
+
+resource "aws_route53_record" "sftp" {
+  zone_id = data.aws_route53_zone.sftp.zone_id
+  name    = var.sftp_domain
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.sftp.dns_name
+    zone_id                = aws_lb.sftp.zone_id
+    evaluate_target_health = true
+  }
+}
+
