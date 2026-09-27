@@ -193,6 +193,7 @@ resource "aws_launch_template" "lab" {
     aws_security_group.ssh.id
   ]
 
+  user_data = base64encode(<<-EOF
 #!/bin/bash
 
 echo "===== SFTP USERDATA START =====" > /tmp/sftp-userdata.log
