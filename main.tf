@@ -87,16 +87,16 @@ resource "aws_security_group" "ssh" {
 
   ingress {
     description = "SSH"
-    from_port   = 22
-    to_port     = 22
+    from_port   = 60022
+    to_port     = 60022
     protocol    = "tcp"
     cidr_blocks = [var.my_ip]
   }
 
   ingress {
     description = "NLB health check"
-    from_port   = 22
-    to_port     = 22
+    from_port   = 60022
+    to_port     = 60022
     protocol    = "tcp"
     cidr_blocks = ["10.10.0.0/16"]
   }
@@ -129,8 +129,9 @@ resource "aws_lb" "sftp" {
 }
 
 resource "aws_lb_target_group" "sftp" {
-  name        = "sftp-port-lab-tg"
-  port        = 22
+  #name        = "sftp-port-lab-tg"
+  name        = "sftp-port-lab-tg-6022"
+  port        = 60022
   protocol    = "TCP"
   target_type = "instance"
   vpc_id      = aws_vpc.lab.id
@@ -143,6 +144,12 @@ resource "aws_lb_target_group" "sftp" {
   tags = {
     Name = "sftp-port-lab-tg"
   }
+
+#for del old TG
+  lifecycle {
+    create_before_destroy = true
+  }
+
 }
 
 resource "aws_lb_listener" "sftp" {
